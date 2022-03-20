@@ -7,7 +7,16 @@ __global__ void cuda_hello(){
 
 int main() {
     cudaError_t cudaerr;
-    
+    float* deviceA;
+    int result = 0;
+
+    size_t available, total;
+    cudaMemGetInfo(&available, &total);
+
+
+    if(result = (cudaMalloc((void **) &deviceA, 10 * sizeof(float)) != cudaSuccess))
+	printf("Failed to malloc deviceA, errorCode:%d\n", result);
+
     cuda_hello<<<1,1>>>();
 
     cudaerr = cudaDeviceSynchronize();
