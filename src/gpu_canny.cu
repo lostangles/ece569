@@ -10,7 +10,8 @@
 #include <stdio.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
 //*****************************************************************************************
 // CUDA Gaussian Filter Implementation
@@ -477,6 +478,38 @@ int main() {
         img->allocation_ = STB_ALLOCATED;
     }
 
+    stbi_write_jpg("test2.jpg", img->width, img->height, img->channels, img->data, 100);
+
+    pixel_channel_t* inputImage = (pixel_channel_t*)malloc( (img->width * img->height)*sizeof(pixel_channel_t) * img->channels );
+    pixel_channel_t* outputImage = (pixel_channel_t*)malloc( (img->width * img->height)*sizeof(pixel_channel_t) * img->channels);
+
+    for(int i=0; i<img->height; i++)
+    {
+       for(int j=0, k=0; j<img->width*img->channels; j+= img->channels, k++)
+       {
+          inputImage[i*k + k] = 
+		    (  img->data[i*j + j]    //red
+	            + img->data[i*j+j + 1]  //green
+		    + img->data[i*j+j + 2]  //blue
+                    ) / 3;	            //convert to gray
+	  //if(img->channels == 4) inputImage[i*k + k + 1] = img->data[i+j+j + 3];
+       }
+    }
+
+    //Convert 16 bit pixel_type_t back into 8 bytes for stbi_write_image
+    char* stbiOut = (char*)malloc( (img->height * img->width)  );
+    for(int i=0; i<img->height; i++)
+    {
+       for(int j=0; j<img->width; j+= 1)
+       {
+          stbiOut[i*j + j] = inputImage[i*j + j];
+       }
+    }
+
+
+
+    stbi_write_jpg("test.jpg", img->width, img->height, 1, stbiOut, 100);
+
     printf("img->size:  %d img->width: %d image->height: %d img->channels: %d\n", img->size, img->width, img->height, img->channels);
 
     size_t available, total;
@@ -493,6 +526,10 @@ int main() {
         printf("kernel launch failed with error %d \"%s\".\n",
 	       cudaerr,
                cudaGetErrorString(cudaerr));
+
+    free(img);
+    free (inputImage);
+    free (outputImage);
     return 0;
 }
 
