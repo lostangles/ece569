@@ -30,8 +30,8 @@ link_directories(
 
 
 cuda_add_executable(
-    hellocuda
-    src/hellocuda.cu
+    canny
+    src/gpu_canny.cu
     #utility/wrapper.cpp
     #utility/wrapper.h
         )

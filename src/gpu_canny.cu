@@ -388,6 +388,66 @@ void cu_hysteresis_low(pixel_channel_t *out_pixels, pixel_channel_t *in_pixels, 
     }
 }
 
+void cu_detect_edges(pixel_channel_t *final_pixels, pixel_t *orig_pixels, int rows, int cols, double kernel[KERNEL_SIZE][KERNEL_SIZE])
+{
+    /* kernel execution configuration parameters */
+    int num_blks = (rows * cols) / 1024;
+    int thd_per_blk = 1024;
+    int grid = 0;
+    pixel_channel_t t_high = 0xFCC;
+    pixel_channel_t t_low = 0xF5;
+
+    /* device buffers */
+    pixel_t *in, *out;
+    pixel_channel_t *single_channel_buf0;
+    pixel_channel_t *single_channel_buf1;
+    pixel_channel_t_signed *deltaX;
+    pixel_channel_t_signed *deltaY;
+    double *d_blur_kernel;
+    unsigned *idx_map;
+
+    /* allocate device memory */
+    cudaMalloc((void**) &in, sizeof(pixel_t)*rows*cols);
+    cudaMalloc((void**) &out, sizeof(pixel_t)*rows*cols);
+    cudaMalloc((void**) &single_channel_buf0, sizeof(pixel_channel_t)*rows*cols);
+    cudaMalloc((void**) &single_channel_buf1, sizeof(pixel_channel_t)*rows*cols);
+    cudaMalloc((void**) &deltaX, sizeof(pixel_channel_t_signed)*rows*cols);
+    cudaMalloc((void**) &deltaY, sizeof(pixel_channel_t_signed)*rows*cols);
+    cudaMalloc((void**) &idx_map, sizeof(idx_map[0])*rows*cols);
+    cudaMalloc((void**) &d_blur_kernel, sizeof(d_blur_kernel[0])*KERNEL_SIZE*KERNEL_SIZE);
+
+    /* data transfer image pixels to device */
+    cudaMemcpy(in, orig_pixels, rows*cols*sizeof(pixel_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_blur_kernel, kernel, sizeof(d_blur_kernel[0])*KERNEL_SIZE*KERNEL_SIZE, cudaMemcpyHostToDevice);
+
+    /* run canny edge detection core - CUDA kernels */
+    /* use streams to ensure the kernels are in the same task */
+    cudaStream_t stream;
+    cudaStreamCreate(&stream);
+    cu_apply_gaussian_filter<<<num_blks, thd_per_blk, grid, stream>>>(in, out, rows, cols, d_blur_kernel);
+    cu_compute_intensity_gradient<<<num_blks, thd_per_blk, grid, stream>>>(out, deltaX, deltaY, rows, cols);
+    cu_magnitude<<<num_blks, thd_per_blk, grid, stream>>>(deltaX, deltaY, single_channel_buf0, rows, cols);
+    cu_suppress_non_max<<<num_blks, thd_per_blk, grid, stream>>>(single_channel_buf0, deltaX, deltaY, single_channel_buf1, rows, cols);
+    cu_hysteresis_high<<<num_blks, thd_per_blk, grid, stream>>>(single_channel_buf0, single_channel_buf1, idx_map, t_high, rows, cols);
+    cu_hysteresis_low<<<num_blks, thd_per_blk, grid, stream>>>(single_channel_buf0, single_channel_buf1, idx_map, t_low, rows, cols);
+
+    /* wait for everything to finish */
+    cudaDeviceSynchronize();
+
+    /* copy result back to the host */
+    cudaMemcpy(final_pixels, single_channel_buf0, rows*cols*sizeof(pixel_channel_t), cudaMemcpyDeviceToHost);
+
+    /* cleanup */
+    cudaFree(in);
+    cudaFree(out);
+    cudaFree(single_channel_buf0);
+    cudaFree(single_channel_buf1);
+    cudaFree(deltaX);
+    cudaFree(deltaY);
+    cudaFree(idx_map);
+    cudaFree(d_blur_kernel);
+}
+
 enum allocation_type {
     NO_ALLOCATION, SELF_ALLOCATED, STB_ALLOCATED
 };
