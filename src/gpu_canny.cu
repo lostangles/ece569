@@ -1,5 +1,8 @@
 #include <vector>
 #include <math.h>
+#include <chrono> // time/clocks
+#include <iostream> // cout, cerr
+
 #include "canny.h"
 
 #define _USE_MATH_DEFINES
@@ -558,7 +561,11 @@ int main(int argc, char *argv[]) {
 
     double kernel[KERNEL_SIZE][KERNEL_SIZE];
     populate_blur_kernel(kernel);
+    std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
     cu_detect_edges(outputImage, inputImage, img->height, img->width, kernel); 
+    std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    std::cout << "Elapsed time: " << duration << " us" << std::endl;
 
     //Convert 16 bit pixel_type_t back into 8 bytes for stbi_write_image
     char* stbiOut = (char*)malloc( (img->height * img->width)  );
