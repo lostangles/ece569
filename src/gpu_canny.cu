@@ -510,7 +510,7 @@ int main() {
         img->allocation_ = STB_ALLOCATED;
     }
 
-    stbi_write_jpg("test2.jpg", img->width, img->height, 3, img->data, 100);
+    stbi_write_jpg("Original_Image.jpg", img->width, img->height, 3, img->data, 100);
 
     pixel_t* inputImage = (pixel_t*)malloc( (img->width * img->height)*sizeof(pixel_t) );
     pixel_channel_t* outputImage = (pixel_channel_t*)malloc( (img->width * img->height)*sizeof(pixel_channel_t) * img->channels);
