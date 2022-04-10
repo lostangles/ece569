@@ -4,7 +4,7 @@
 
 #define _USE_MATH_DEFINES
 #define RGB2GRAY_CONST_ARR_SIZE 3
-#define STRONG_EDGE 0xFFFF
+#define STRONG_EDGE 0xFF
 #define NON_EDGE 0x0
 
 #include <stdio.h>
@@ -395,8 +395,8 @@ void cu_detect_edges(pixel_channel_t *final_pixels, pixel_t *orig_pixels, int ro
     int num_blks = (rows * cols) / 1024;
     int thd_per_blk = 1024;
     int grid = 0;
-    pixel_channel_t t_high = 0xFCC;
-    pixel_channel_t t_low = 0xF5;
+    pixel_channel_t t_high = 0x0A;
+    pixel_channel_t t_low = 0x00;
 
     /* device buffers */
     pixel_t *in, *out;
@@ -466,49 +466,100 @@ __global__ void cuda_hello(){
     printf("Hello World from GPU!\n");
 }
 
+void populate_blur_kernel(double out_kernel[KERNEL_SIZE][KERNEL_SIZE])
+{
+    double scaleVal = 1;
+    double stDev = (double)KERNEL_SIZE/3;
+
+    for (int i = 0; i < KERNEL_SIZE; ++i) {
+        for (int j = 0; j < KERNEL_SIZE; ++j) {
+            double xComp = pow((i - KERNEL_SIZE/2), 2);
+            double yComp = pow((j - KERNEL_SIZE/2), 2);
+
+            double stDevSq = pow(stDev, 2);
+            double pi = M_PI;
+
+            //calculate the value at each index of the Kernel
+            double kernelVal = exp(-(((xComp) + (yComp)) / (2 * stDevSq)));
+            kernelVal = (1 / (sqrt(2 * pi)*stDev)) * kernelVal;
+
+            //populate Kernel
+            out_kernel[i][j] = kernelVal;
+
+            if (i==0 && j==0) 
+            {
+                scaleVal = out_kernel[0][0];
+            }
+
+            //normalize Kernel
+            out_kernel[i][j] = out_kernel[i][j] / scaleVal;
+        }
+    }
+}
+
 int main() {
     cudaError_t cudaerr;
     float* deviceA;
     int result = 0;
     Image* img = (Image*)malloc(sizeof(Image));
     char* fname = "../images/image1.png";
-    if((img->data = stbi_load(fname, &img->width, &img->height, &img->channels, 0)) != NULL) 
+//    char* fname = "../images/car.png";
+    if((img->data = stbi_load(fname, &img->width, &img->height, &img->channels, STBI_rgb)) != NULL) 
     {
         img->size = img->width * img->height * img->channels;
         img->allocation_ = STB_ALLOCATED;
     }
 
-    stbi_write_jpg("test2.jpg", img->width, img->height, img->channels, img->data, 100);
+    stbi_write_jpg("test2.jpg", img->width, img->height, 3, img->data, 100);
 
-    pixel_channel_t* inputImage = (pixel_channel_t*)malloc( (img->width * img->height)*sizeof(pixel_channel_t) * img->channels );
+    pixel_t* inputImage = (pixel_t*)malloc( (img->width * img->height)*sizeof(pixel_t) );
     pixel_channel_t* outputImage = (pixel_channel_t*)malloc( (img->width * img->height)*sizeof(pixel_channel_t) * img->channels);
 
     for(int i=0; i<img->height; i++)
     {
-       for(int j=0, k=0; j<img->width*img->channels; j+= img->channels, k++)
+       for(int k=0; k<img->width; k++)
        {
-          inputImage[i*k + k] = 
-		    (  img->data[i*j + j]    //red
-	            + img->data[i*j+j + 1]  //green
-		    + img->data[i*j+j + 2]  //blue
-                    ) / 3;	            //convert to gray
-	  //if(img->channels == 4) inputImage[i*k + k + 1] = img->data[i+j+j + 3];
+	  size_t base = (k + img->width * i);
+          inputImage[base].red    = img->data[ base*3 ];     //Red
+          inputImage[base].green  = img->data[ base*3 + 1]; //Green
+	  inputImage[base].blue   = img->data[ base*3 + 2]; //blue
        }
     }
+
+    //Intermediat debug output
+    /*
+    char* stbiDebug = (char*)malloc( (img->height * img->width) * 3  );
+    for(int i=0; i<img->height; i++)
+    {
+       for(int k=0; k<img->width; k++)
+       {
+	  size_t base = (k + img->width * i);
+          stbiDebug[base*3    ] = inputImage[base].red;
+	  stbiDebug[base*3 + 1] = inputImage[base].green;
+	  stbiDebug[base*3 + 2] = inputImage[base].blue;
+       }
+    }
+    
+
+    stbi_write_jpg("debug.jpg", img->width, img->height, 3, stbiDebug, 100);
+    */
+
+    double kernel[KERNEL_SIZE][KERNEL_SIZE];
+    populate_blur_kernel(kernel);
+    cu_detect_edges(outputImage, inputImage, img->height, img->width, kernel); 
 
     //Convert 16 bit pixel_type_t back into 8 bytes for stbi_write_image
     char* stbiOut = (char*)malloc( (img->height * img->width)  );
-    for(int i=0; i<img->height; i++)
+    for(int i=0; i<img->height*img->width; i++)
     {
-       for(int j=0; j<img->width; j+= 1)
-       {
-          stbiOut[i*j + j] = inputImage[i*j + j];
-       }
+          stbiOut[i] = outputImage[i];
+	  if (outputImage[i] > 255)
+		  printf("outputImage[%d]: %d\n", i, outputImage[i]);
     }
 
 
 
-    stbi_write_jpg("test.jpg", img->width, img->height, 1, stbiOut, 100);
+    stbi_write_jpg("output.jpg", img->width, img->height, 1, stbiOut, 100);
 
     printf("img->size:  %d img->width: %d image->height: %d img->channels: %d\n", img->size, img->width, img->height, img->channels);
 
