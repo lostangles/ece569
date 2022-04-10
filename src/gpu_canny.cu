@@ -497,13 +497,25 @@ void populate_blur_kernel(double out_kernel[KERNEL_SIZE][KERNEL_SIZE])
     }
 }
 
-int main() {
+int main(int argc, char *argv[]) {
     cudaError_t cudaerr;
     float* deviceA;
     int result = 0;
     Image* img = (Image*)malloc(sizeof(Image));
-    char* fname = "../images/image1.png";
-//    char* fname = "../images/car.png";
+    char* defaultFname = "../images/image1.png";
+    char* defaultOutName = "output.jpg";
+    char* fname;
+    char* outFname;
+    if (argc != 5)
+    {
+       fname = defaultFname;
+       outFname = defaultOutName;
+    }
+    else
+    {
+       fname = argv[2];
+       outFname = argv[4];
+    }
     if((img->data = stbi_load(fname, &img->width, &img->height, &img->channels, STBI_rgb)) != NULL) 
     {
         img->size = img->width * img->height * img->channels;
@@ -559,7 +571,7 @@ int main() {
 
 
 
-    stbi_write_jpg("output.jpg", img->width, img->height, 1, stbiOut, 100);
+    stbi_write_jpg(outFname, img->width, img->height, 1, stbiOut, 100);
 
     printf("img->size:  %d img->width: %d image->height: %d img->channels: %d\n", img->size, img->width, img->height, img->channels);
 
