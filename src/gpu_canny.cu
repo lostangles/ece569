@@ -28,17 +28,70 @@ void cu_apply_gaussian_filter(pixel_t *in_pixels, pixel_t *out_pixels, int rows,
 {
     //copy kernel array from global memory to a shared array
     __shared__ double kernel[KERNEL_SIZE][KERNEL_SIZE];
+    extern __shared__ pixel_t shared_pixels[];
+
+    int pixNum = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = blockDim.y * blockIdx.y + threadIdx.y;
+    int col = blockDim.x * blockIdx.x + threadIdx.x;
+    int pix = row * cols + col;
+
+    int b_row = threadIdx.y;
+    int b_col = threadIdx.x;
+    int b_width = blockDim.x + (KERNEL_SIZE/2)*2;
+    int b_height = blockDim.y + (KERNEL_SIZE/2)*2;
+    int b_p = (b_row * b_width + b_width * (KERNEL_SIZE/2)) + b_col+(KERNEL_SIZE/2); // block pixel = b_p
+
+
     for (int i = 0; i < KERNEL_SIZE; ++i) {
         for (int j = 0; j < KERNEL_SIZE; ++j) {
             kernel[i][j] = in_kernel[i * KERNEL_SIZE + j];
         }
     }
 
+    pixel_t temp;
+    temp.red = 0;
+    temp.green = 0;
+    temp.blue = 0;
+    //Load global pixels into shared memory pixels
+    if (row < rows && col < cols)
+	    shared_pixels[b_p] = in_pixels[pix];
+    //Boundaries on top and left side also load right and bottom - speedup if this part splits?
+    if (b_col < KERNEL_SIZE/2)
+    {
+       //Handle left edge
+       if( ((pix-KERNEL_SIZE/2) >= row*cols )
+         && ((pix-KERNEL_SIZE/2) < cols*rows) )
+       {
+          shared_pixels[b_p - KERNEL_SIZE/2] = in_pixels[pix - KERNEL_SIZE/2];
+       }
+       //Handle right edge
+       if( ((pix+blockDim.x) < (row+1)*cols)
+         && (row < rows))
+       {
+          shared_pixels[b_p+blockDim.x] = in_pixels[pix+blockDim.x]; 
+       }
+    }
+    if (b_row < KERNEL_SIZE/2)
+    {
+       if( ((pix - ( blockDim.x * KERNEL_SIZE/2 )) >= 0)
+        && ((pix - ( blockDim.x * KERNEL_SIZE/2 )) < rows*cols) )
+       {
+           shared_pixels[b_p - blockDim.x * KERNEL_SIZE/2] = in_pixels[pix - (blockDim.x*KERNEL_SIZE/2)];
+       }
+       if( ((pix + (blockDim.x * KERNEL_SIZE/2 )) <= rows*cols) )
+       {
+          shared_pixels[b_p + blockDim.x * KERNEL_SIZE/2] = in_pixels[pix + (blockDim.x*KERNEL_SIZE/2)];
+       }
+    }
+    //End loading shared memory
+
     __syncthreads();
 
     //determine id of thread which corresponds to an individual pixel
-    int pixNum = blockIdx.x * blockDim.x + threadIdx.x;
-    if (pixNum >= 0 && pixNum < rows * cols) {
+
+    if (pix >= 0 && pix < rows * cols) {
+
+
 
         double kernelSum;
         double redPixelVal;
@@ -48,25 +101,16 @@ void cu_apply_gaussian_filter(pixel_t *in_pixels, pixel_t *out_pixels, int rows,
         //Apply Kernel to each pixel of image
         for (int i = 0; i < KERNEL_SIZE; ++i) {
             for (int j = 0; j < KERNEL_SIZE; ++j) {
-
-                //check edge cases, if within bounds, apply filter
-                if (((pixNum + ((i - ((KERNEL_SIZE - 1) / 2))*cols) + j - ((KERNEL_SIZE - 1) / 2)) >= 0)
-                    && ((pixNum + ((i - ((KERNEL_SIZE - 1) / 2))*cols) + j - ((KERNEL_SIZE - 1) / 2)) <= rows*cols-1)
-                    && (((pixNum % cols) + j - ((KERNEL_SIZE-1)/2)) >= 0)
-                    && (((pixNum % cols) + j - ((KERNEL_SIZE-1)/2)) <= (cols-1))) {
-
-                    redPixelVal += kernel[i][j] * in_pixels[pixNum + ((i - ((KERNEL_SIZE - 1) / 2))*cols) + j - ((KERNEL_SIZE - 1) / 2)].red;
-                    greenPixelVal += kernel[i][j] * in_pixels[pixNum + ((i - ((KERNEL_SIZE - 1) / 2))*cols) + j - ((KERNEL_SIZE - 1) / 2)].green;
-                    bluePixelVal += kernel[i][j] * in_pixels[pixNum + ((i - ((KERNEL_SIZE - 1) / 2))*cols) + j - ((KERNEL_SIZE - 1) / 2)].blue;
+                    redPixelVal += kernel[i][j] * shared_pixels[b_p + ((i - ((KERNEL_SIZE - 1) / 2))) + j - ((KERNEL_SIZE - 1) / 2)].red;
+                    greenPixelVal += kernel[i][j] * shared_pixels[b_p + ((i - ((KERNEL_SIZE - 1) / 2))) + j - ((KERNEL_SIZE - 1) / 2)].green;
+                    bluePixelVal += kernel[i][j] * shared_pixels[b_p + ((i - ((KERNEL_SIZE - 1) / 2))) + j - ((KERNEL_SIZE - 1) / 2)].blue;
                     kernelSum += kernel[i][j];
-                }
             }
         }
-
         //update output image
-        out_pixels[pixNum].red = redPixelVal / kernelSum;
-        out_pixels[pixNum].green = greenPixelVal / kernelSum;
-        out_pixels[pixNum].blue = bluePixelVal / kernelSum;
+        out_pixels[pix].red = redPixelVal / kernelSum;
+        out_pixels[pix].green = greenPixelVal / kernelSum;
+        out_pixels[pix].blue = bluePixelVal / kernelSum;
     }
 }
 
@@ -398,6 +442,9 @@ void cu_detect_edges(pixel_channel_t *final_pixels, pixel_t *orig_pixels, int ro
     int num_blks = (rows * cols) / 1024;
     int thd_per_blk = 1024;
     int grid = 0;
+    int thr = 32;
+    dim3 b(thr,thr);
+    dim3 g((cols+b.x-1)/b.x,(rows+b.y-1)/b.y);
     pixel_channel_t t_high = 0x0A;
     pixel_channel_t t_low = 0x00;
 
@@ -431,7 +478,7 @@ void cu_detect_edges(pixel_channel_t *final_pixels, pixel_t *orig_pixels, int ro
 
 
     std::chrono::high_resolution_clock::time_point start1 = std::chrono::high_resolution_clock::now();
-    cu_apply_gaussian_filter<<<num_blks, thd_per_blk, grid, stream>>>(in, out, rows, cols, d_blur_kernel);
+    cu_apply_gaussian_filter<<<g, b, (thr + KERNEL_SIZE*2) * (thr + KERNEL_SIZE*2) * sizeof(pixel_t) , stream>>>(in, out, rows, cols, d_blur_kernel);
     cudaDeviceSynchronize();
     std::chrono::high_resolution_clock::time_point end1 = std::chrono::high_resolution_clock::now();
     auto duration1 = std::chrono::duration_cast<std::chrono::microseconds>(end1 - start1).count();
