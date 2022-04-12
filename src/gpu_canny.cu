@@ -428,12 +428,52 @@ void cu_detect_edges(pixel_channel_t *final_pixels, pixel_t *orig_pixels, int ro
     /* use streams to ensure the kernels are in the same task */
     cudaStream_t stream;
     cudaStreamCreate(&stream);
+
+
+    std::chrono::high_resolution_clock::time_point start1 = std::chrono::high_resolution_clock::now();
     cu_apply_gaussian_filter<<<num_blks, thd_per_blk, grid, stream>>>(in, out, rows, cols, d_blur_kernel);
+    cudaDeviceSynchronize();
+    std::chrono::high_resolution_clock::time_point end1 = std::chrono::high_resolution_clock::now();
+    auto duration1 = std::chrono::duration_cast<std::chrono::microseconds>(end1 - start1).count();
+    std::cout << "Elapsed time Gaussian: " << duration1 << " us" << std::endl;
+    
+    std::chrono::high_resolution_clock::time_point start2 = std::chrono::high_resolution_clock::now();
     cu_compute_intensity_gradient<<<num_blks, thd_per_blk, grid, stream>>>(out, deltaX, deltaY, rows, cols);
+    cudaDeviceSynchronize();
+    std::chrono::high_resolution_clock::time_point end2 = std::chrono::high_resolution_clock::now();
+    auto duration2 = std::chrono::duration_cast<std::chrono::microseconds>(end2 - start2).count();
+    std::cout << "Elapsed time Intensity Gradient: " << duration2 << " us" << std::endl;
+    
+    std::chrono::high_resolution_clock::time_point start3 = std::chrono::high_resolution_clock::now();
     cu_magnitude<<<num_blks, thd_per_blk, grid, stream>>>(deltaX, deltaY, single_channel_buf0, rows, cols);
-    cu_suppress_non_max<<<num_blks, thd_per_blk, grid, stream>>>(single_channel_buf0, deltaX, deltaY, single_channel_buf1, rows, cols);
+    cudaDeviceSynchronize();
+    std::chrono::high_resolution_clock::time_point end3 = std::chrono::high_resolution_clock::now();
+    auto duration3 = std::chrono::duration_cast<std::chrono::microseconds>(end3 - start3).count();
+    std::cout << "Elapsed time magnitude: " << duration3 << " us" << std::endl;
+
+    std::chrono::high_resolution_clock::time_point start4 = std::chrono::high_resolution_clock::now();
+    cu_suppress_non_max<<<num_blks, thd_per_blk, grid, stream>>>(single_channel_buf0, deltaX, deltaY, single_channel_buf1, rows, cols);    
+    cudaDeviceSynchronize();
+    std::chrono::high_resolution_clock::time_point end4 = std::chrono::high_resolution_clock::now();
+    auto duration4 = std::chrono::duration_cast<std::chrono::microseconds>(end4 - start4).count();
+    std::cout << "Elapsed time supression: " << duration4 << " us" << std::endl;
+
+    std::chrono::high_resolution_clock::time_point start5 = std::chrono::high_resolution_clock::now();
     cu_hysteresis_high<<<num_blks, thd_per_blk, grid, stream>>>(single_channel_buf0, single_channel_buf1, idx_map, t_high, rows, cols);
+    cudaDeviceSynchronize();
+    std::chrono::high_resolution_clock::time_point end5 = std::chrono::high_resolution_clock::now();
+    auto duration5 = std::chrono::duration_cast<std::chrono::microseconds>(end5 - start5).count();
+    std::cout << "Elapsed time hysterisis high: " << duration5 << " us" << std::endl;
+
+    std::chrono::high_resolution_clock::time_point start6 = std::chrono::high_resolution_clock::now();
     cu_hysteresis_low<<<num_blks, thd_per_blk, grid, stream>>>(single_channel_buf0, single_channel_buf1, idx_map, t_low, rows, cols);
+    cudaDeviceSynchronize();
+    std::chrono::high_resolution_clock::time_point end6 = std::chrono::high_resolution_clock::now();
+    auto duration6 = std::chrono::duration_cast<std::chrono::microseconds>(end6 - start6).count();
+    std::cout << "Elapsed time hysterisis low: " << duration6 << " us" << std::endl;
+
+
+
 
     /* wait for everything to finish */
     cudaDeviceSynchronize();
@@ -565,7 +605,7 @@ int main(int argc, char *argv[]) {
     cu_detect_edges(outputImage, inputImage, img->height, img->width, kernel); 
     std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    std::cout << "Elapsed time: " << duration << " us" << std::endl;
+    std::cout << "Elapsed time total: " << duration << " us" << std::endl;
 
     //Convert 16 bit pixel_type_t back into 8 bytes for stbi_write_image
     char* stbiOut = (char*)malloc( (img->height * img->width)  );
