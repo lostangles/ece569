@@ -71,6 +71,7 @@ void cu_apply_gaussian_filter(pixel_t *in_pixels, pixel_t *out_pixels, int rows,
           shared_pixels[b_p+blockDim.x] = in_pixels[pix+blockDim.x]; 
        }
     }
+    
     if (b_row < KERNEL_SIZE/2)
     {
        if( ((pix - ( blockDim.x * KERNEL_SIZE/2 )) >= 0)
@@ -88,15 +89,12 @@ void cu_apply_gaussian_filter(pixel_t *in_pixels, pixel_t *out_pixels, int rows,
     __syncthreads();
 
     //determine id of thread which corresponds to an individual pixel
+    double kernelSum;
+    double redPixelVal;
+    double greenPixelVal;
+    double bluePixelVal;
 
     if (pix >= 0 && pix < rows * cols) {
-
-
-
-        double kernelSum;
-        double redPixelVal;
-        double greenPixelVal;
-        double bluePixelVal;
 
         //Apply Kernel to each pixel of image
         for (int i = 0; i < KERNEL_SIZE; ++i) {
@@ -108,10 +106,12 @@ void cu_apply_gaussian_filter(pixel_t *in_pixels, pixel_t *out_pixels, int rows,
             }
         }
         //update output image
+    }
+    __syncthreads();
         out_pixels[pix].red = redPixelVal / kernelSum;
         out_pixels[pix].green = greenPixelVal / kernelSum;
         out_pixels[pix].blue = bluePixelVal / kernelSum;
-    }
+    
 }
 
 //*****************************************************************************************
