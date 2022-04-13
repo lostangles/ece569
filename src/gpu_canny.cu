@@ -74,15 +74,18 @@ void cu_apply_gaussian_filter(pixel_t *in_pixels, pixel_t *out_pixels, int rows,
     
     if (b_row < KERNEL_SIZE/2)
     {
-       if( ((pix - ( blockDim.x * KERNEL_SIZE/2 )) >= 0)
-        && ((pix - ( blockDim.x * KERNEL_SIZE/2 )) < rows*cols) )
-       {
-           shared_pixels[b_p - blockDim.x * KERNEL_SIZE/2] = in_pixels[pix - (blockDim.x*KERNEL_SIZE/2)];
-       }
-       if( ((pix + (blockDim.x * KERNEL_SIZE/2 )) <= rows*cols) )
-       {
-          shared_pixels[b_p + blockDim.x * KERNEL_SIZE/2] = in_pixels[pix + (blockDim.x*KERNEL_SIZE/2)];
-       }
+         if( ((pix - ( cols * KERNEL_SIZE/2 )) >= 0)
+         && ((pix - ( cols * KERNEL_SIZE/2 )) < rows*cols) )
+        {
+            shared_pixels[b_p - b_width * KERNEL_SIZE/2] = in_pixels[pix - (cols*KERNEL_SIZE/2)];
+        }
+        //Bottom edge
+        if( (( (pix+blockDim.y*cols) ) < rows*cols) )
+        {
+           shared_pixels[(b_p + blockDim.y*b_width )] = in_pixels[ pix + blockDim.y*cols];
+
+        }
+
     }
     //End loading shared memory
 
@@ -105,13 +108,11 @@ void cu_apply_gaussian_filter(pixel_t *in_pixels, pixel_t *out_pixels, int rows,
                     kernelSum += kernel[i][j];
             }
         }
-        //update output image
-    }
-    __syncthreads();
         out_pixels[pix].red = redPixelVal / kernelSum;
         out_pixels[pix].green = greenPixelVal / kernelSum;
         out_pixels[pix].blue = bluePixelVal / kernelSum;
-    
+        //update output image
+    }
 }
 
 //*****************************************************************************************
