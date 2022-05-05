@@ -1,0 +1,5 @@
+./canny -input ../baseline_images/8k_in.jpg -output test1.jpg | tee test1.out
+./canny -input ../baseline_images/4k_in.jpg -output test2.jpg | tee test2.out
+./canny -input ../baseline_images/Engine_in.PNG -output test3.jpg | tee test3.out
+./canny -input ../baseline_images/1080p_in.jpg -output test4.jpg | tee test4.out
+./canny -input ../baseline_images/small_in.jpeg -output test5.jpg | tee test5.out
