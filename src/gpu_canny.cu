@@ -41,17 +41,14 @@ void cu_apply_gaussian_filter(pixel_t *in_pixels, pixel_t *out_pixels, int rows,
     int b_height = blockDim.y + (KERNEL_SIZE/2)*2;
     int b_p = (b_row * b_width + b_width * (KERNEL_SIZE/2)) + b_col+(KERNEL_SIZE/2); // block pixel = b_p
 
-
+    if ( (b_row == 0) && (b_col == 0))
     for (int i = 0; i < KERNEL_SIZE; ++i) {
         for (int j = 0; j < KERNEL_SIZE; ++j) {
             kernel[i][j] = in_kernel[i * KERNEL_SIZE + j];
         }
     }
+    __syncthreads();
 
-    pixel_t temp;
-    temp.red = 0;
-    temp.green = 0;
-    temp.blue = 0;
     //Load global pixels into shared memory pixels
     if (row < rows && col < cols)
 	    shared_pixels[b_p] = in_pixels[pix];
@@ -71,9 +68,9 @@ void cu_apply_gaussian_filter(pixel_t *in_pixels, pixel_t *out_pixels, int rows,
           shared_pixels[b_p+blockDim.x] = in_pixels[pix+blockDim.x]; 
        }
     }
-    
     if (b_row < KERNEL_SIZE/2)
     {
+        //Handle top edge
          if( ((pix - ( cols * KERNEL_SIZE/2 )) >= 0)
          && ((pix - ( cols * KERNEL_SIZE/2 )) < rows*cols) )
         {
@@ -479,7 +476,7 @@ void cu_detect_edges(pixel_channel_t *final_pixels, pixel_t *orig_pixels, int ro
 
 
     std::chrono::high_resolution_clock::time_point start1 = std::chrono::high_resolution_clock::now();
-    cu_apply_gaussian_filter<<<g, b, (thr + KERNEL_SIZE*2) * (thr + KERNEL_SIZE*2) * sizeof(pixel_t) , stream>>>(in, out, rows, cols, d_blur_kernel);
+    cu_apply_gaussian_filter<<<g, b, (thr + KERNEL_SIZE*2) * (thr + KERNEL_SIZE*2) * sizeof(pixel_t), stream >>>(in, out, rows, cols, d_blur_kernel);
     cudaDeviceSynchronize();
     std::chrono::high_resolution_clock::time_point end1 = std::chrono::high_resolution_clock::now();
     auto duration1 = std::chrono::duration_cast<std::chrono::microseconds>(end1 - start1).count();
